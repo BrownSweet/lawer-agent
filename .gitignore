@@ -1,0 +1,16 @@
+.env
+**/.env
+.venv/
+**/.venv/
+node_modules/
+dist/
+.local/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.pyc
+*.log
+*.tsbuildinfo
+.DS_Store
+.crewai/
+**/.crewai/

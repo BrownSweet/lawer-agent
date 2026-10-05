@@ -1,0 +1,51 @@
+[
+  {
+    "skill": "legal-scenario-router",
+    "source_pack": "legal-search-pro",
+    "source_path": "/Users/brown/Desktop/简历/legal-search-pro/skills/legal-scenario-router/SKILL.md",
+    "source_sha256": "2f39d2bc5a0accd8fd19d403b836a7982b691b63952fbbeb33f7d96197cf7413",
+    "migration": "提炼方法并重写为独立运行时技能；去除宿主路径、强制 MCP 与过时条号；不声称完整移植源工作流"
+  },
+  {
+    "skill": "legal-search-engine",
+    "source_pack": "legal-search-pro",
+    "source_path": "/Users/brown/Desktop/简历/legal-search-pro/skills/legal-search-engine/SKILL.md",
+    "source_sha256": "a6fa8fd0c4a6ffd7fd2c491b4b370cf0a3287cca100ff1f7760e350afa1c3cfc",
+    "migration": "提炼方法并重写为独立运行时技能；去除宿主路径、强制 MCP 与过时条号；不声称完整移植源工作流"
+  },
+  {
+    "skill": "case-retrieval",
+    "source_pack": "legal-search-pro",
+    "source_path": "/Users/brown/Desktop/简历/legal-search-pro/skills/case-retrieval/SKILL.md",
+    "source_sha256": "5cc70459195ede98251b6e25c3cb8a3fafac57269e148c0be16721c514583231",
+    "migration": "提炼方法并重写为独立运行时技能；去除宿主路径、强制 MCP 与过时条号；不声称完整移植源工作流"
+  },
+  {
+    "skill": "legal-output-formatter",
+    "source_pack": "legal-search-pro",
+    "source_path": "/Users/brown/Desktop/简历/legal-search-pro/skills/legal-output-formatter/SKILL.md",
+    "source_sha256": "599b1fd4aab319c3da00c27abd590772244e7cb053fb432197d65f4b84932740",
+    "migration": "提炼方法并重写为独立运行时技能；去除宿主路径、强制 MCP 与过时条号；不声称完整移植源工作流"
+  },
+  {
+    "skill": "legal-verification-workbench",
+    "source_pack": "legal-search-pro",
+    "source_path": "/Users/brown/Desktop/简历/legal-search-pro/skills/legal-verification-workbench/SKILL.md",
+    "source_sha256": "79692443fa803ce8c12a820e3da3183076c2a3761cf13eea5b15b9fe84a6c35d",
+    "migration": "提炼方法并重写为独立运行时技能；去除宿主路径、强制 MCP 与过时条号；不声称完整移植源工作流"
+  },
+  {
+    "skill": "litigation-workflows",
+    "source_pack": "诉法法-诉讼支持技能包",
+    "source_path": "/Users/brown/Desktop/诉法法-诉讼支持技能包/skills/litigation-workflows/SKILL.md",
+    "source_sha256": "9fefe11dd56aa10bc4527618692b5f17610bf50551c98e1740e22475c27ca239",
+    "migration": "提炼方法并重写为独立运行时技能；去除宿主路径、强制 MCP 与过时条号；不声称完整移植源工作流"
+  },
+  {
+    "skill": "china-litigation-toolkit",
+    "source_pack": "诉法法-诉讼支持技能包",
+    "source_path": "/Users/brown/Desktop/诉法法-诉讼支持技能包/skills/china-litigation-toolkit/SKILL.md",
+    "source_sha256": "3a8008225030da45b6de4d37d4af2a615012c2752a8224166a8f9a74afb48e2b",
+    "migration": "提炼方法并重写为独立运行时技能；去除宿主路径、强制 MCP 与过时条号；不声称完整移植源工作流"
+  }
+]
