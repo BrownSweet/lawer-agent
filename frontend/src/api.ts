@@ -1,6 +1,8 @@
+export const apiURL = (path: string) => `${import.meta.env.BASE_URL}api${path}`
+
 export async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
   const isFile = options.body instanceof FormData
-  const response = await fetch('/api' + path, {
+  const response = await fetch(apiURL(path), {
     ...options, credentials: 'same-origin',
     headers: { 'X-Workspace-Request': '1', ...(isFile ? {} : { 'Content-Type': 'application/json' }), ...options.headers },
   })

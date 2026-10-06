@@ -28,9 +28,9 @@ def main():
     if not args.skip_install:
         subprocess.run([uv, 'sync', '--python', '3.12', '--locked'], cwd=ROOT / 'law_backend', check=True)
         subprocess.run(['npm', 'ci', '--cache', str(ROOT / '.local/npm-cache')], cwd=ROOT / 'frontend', check=True)
-        subprocess.run(['npm', 'run', 'build'], cwd=ROOT / 'frontend', check=True)
-    if not (ROOT / 'frontend/dist/index.html').exists():
-        raise SystemExit('Build the frontend first, or run without --skip-install.')
+    # 本地 API 从根路径提供页面；不要复用为 Docker 构建的 /lawer/ 产物。
+    subprocess.run(['npm', 'run', 'build'], cwd=ROOT / 'frontend',
+                   env={**os.environ, 'VITE_BASE_PATH': '/'}, check=True)
     subprocess.run([uv, 'run', 'alembic', 'upgrade', 'head'], cwd=ROOT / 'law_backend', check=True)
     processes = []
     try:

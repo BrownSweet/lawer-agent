@@ -1,0 +1,10 @@
+# 放入 tec.zhiquant.com 的 HTTPS server {} 中，替换原来的两个 /a location。
+# 其余 TLS、代理头、超时、流式设置沿用现有配置。
+location = /lawer {
+    return 308 /lawer/$is_args$args;
+}
+
+location ^~ /lawer/ {
+    # 末尾不要加 /：保留 /lawer/，由应用容器的 Nginx 处理。
+    proxy_pass http://43.155.214.55:8088;
+}
