@@ -15,9 +15,6 @@ if not os.environ.get("LAW_TEST_DATABASE_URL"):
 if not url.database.endswith("_test") or url.get_backend_name() != "mysql":
     raise RuntimeError("Tests require a dedicated MySQL database ending in _test")
 os.environ["DATABASE_URL"] = url.render_as_string(hide_password=False)
-os.environ["APP_SECRET"] = "local-test-encryption-secret-not-production"
-os.environ["APP_PASSWORD"] = "local-test-password"
-os.environ["APP_USERNAME"] = "test-admin"
 os.environ["CREWAI_TRACING_ENABLED"] = "false"
 
 from law_backend.config import settings  # noqa: E402 -- environment isolation must precede imports
@@ -25,15 +22,20 @@ from law_backend.db import Base, engine  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
-def clean_database(tmp_path):
+def clean_database(tmp_path, monkeypatch):
     Base.metadata.create_all(engine)
     with engine.begin() as connection:
         for table in reversed(Base.metadata.sorted_tables):
             connection.execute(table.delete())
-    original = settings.data_dir
-    settings.data_dir = tmp_path
+    monkeypatch.setattr(settings, "data_dir", tmp_path / "files")
+    monkeypatch.setattr(settings, "security_key_path", tmp_path / "security.key")
+    monkeypatch.setattr(settings, "legacy_app_secret", "")
+    monkeypatch.setattr(settings, "legacy_app_username", "admin")
+    monkeypatch.setattr(settings, "legacy_app_password", "")
+    from law_backend.api import attempts
+
+    attempts.clear()
     yield
-    settings.data_dir = original
 
 
 @pytest.fixture
@@ -45,9 +47,9 @@ def client():
     with TestClient(app, headers={"X-Workspace-Request": "1"}) as test_client:
         assert (
             test_client.post(
-                "/api/login", json={"username": "test-admin", "password": "local-test-password"}
+                "/api/auth/setup", json={"username": "test-admin", "password": "local-test-password"}
             ).status_code
-            == 200
+            == 201
         )
         yield test_client
 

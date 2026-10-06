@@ -1,6 +1,4 @@
 import asyncio
-import hashlib
-import hmac
 import json
 import time
 from contextlib import asynccontextmanager
@@ -10,45 +8,60 @@ from typing import Literal
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from itsdangerous import BadSignature, URLSafeTimedSerializer
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, func, select, text
+from sqlalchemy.exc import IntegrityError
 
 from .config import ROOT, settings
-from .db import Case, Event, Material, Page, Run, Session, Source, event, serialize, uid
+from .db import (
+    Account,
+    Case,
+    Event,
+    LoginSession,
+    Material,
+    Page,
+    Run,
+    Session,
+    Source,
+    event,
+    now,
+    serialize,
+    uid,
+)
 from .fees import lawsuit_fee
 from .materials import detect_file, file_hash
 from .preferences import load_config, public_config, save_config
 from .providers import mcp_request, selected_model, test_model
+from .security import create_session, hash_password, initialize_security, token_hash, verify_password
 from .sources import fetch_official, store_source
 from .storage import get, location, put, test_cos
 
-signer = URLSafeTimedSerializer(settings.app_secret, salt="law-account-session-v2")
-
-
-def account_identity(username: str, password: str):
-    return hmac.new(
-        settings.app_secret.encode(),
-        json.dumps([username, password], ensure_ascii=False).encode(),
-        hashlib.sha256,
-    ).hexdigest()
-
-
-session_identity = account_identity(settings.app_username, settings.app_password)
 attempts = {}
 
 
 def authenticate(request: Request):
-    try:
-        identity = signer.loads(request.cookies.get("law_session", ""), max_age=43200)
-        if not hmac.compare_digest(str(identity), session_identity):
-            raise BadSignature("expired identity")
-    except BadSignature:
-        raise HTTPException(401, "请先登录工作台") from None
+    digest = token_hash(request.cookies.get("law_session", ""))
+    with Session() as db:
+        account = db.scalar(
+            select(Account).join(LoginSession, LoginSession.account_id == Account.id)
+            .where(LoginSession.token_hash == digest, LoginSession.expires_at > now())
+        )
+        if account is None:
+            raise HTTPException(401, "请先登录工作台")
+        request.state.account_name = account.username
+
+
+def check_attempts(request):
+    host = request.client.host if request.client else "unknown"
+    recent = [t for t in attempts.get(host, []) if time.time() - t < 600]
+    if len(recent) >= 10:
+        raise HTTPException(429, "尝试过于频繁，请 10 分钟后重试")
+    return host, recent
 
 
 @asynccontextmanager
 async def lifespan(app):
+    initialize_security()
     with Session() as db:
         db.execute(text("SELECT 1"))
     yield
@@ -79,40 +92,86 @@ async def security_headers(request, call_next):
 
 class Login(BaseModel):
     username: str = Field(min_length=1, max_length=64)
-    password: str = Field(max_length=1000)
+    password: str = Field(max_length=256)
+
+
+class SetupAccount(BaseModel):
+    model_config = ConfigDict(hide_input_in_errors=True)
+    username: str = Field(min_length=3, max_length=64, pattern=r"^[A-Za-z0-9_.@-]+$")
+    password: str = Field(min_length=12, max_length=256)
+
+
+class ChangeAccount(SetupAccount):
+    current_password: str = Field(min_length=1, max_length=256)
+
+
+@app.get("/api/auth/status")
+def auth_status():
+    with Session() as db:
+        return {"initialized": db.get(Account, 1) is not None}
+
+
+@app.post("/api/auth/setup", status_code=201)
+def setup_account(body: SetupAccount, response: Response):
+    try:
+        with Session.begin() as db:
+            if db.get(Account, 1) is not None:
+                raise HTTPException(409, "管理员已创建，请登录")
+            db.add(Account(id=1, username=body.username, password_hash=hash_password(body.password)))
+            db.flush()
+            create_session(db, response)
+    except IntegrityError:
+        raise HTTPException(409, "管理员已创建，请登录") from None
+    return {"ok": True, "username": body.username}
 
 
 @app.post("/api/login")
 def login(body: Login, request: Request, response: Response):
-    host = request.client.host if request.client else "unknown"
-    recent = [t for t in attempts.get(host, []) if time.time() - t < 600]
-    if len(recent) >= 10:
-        raise HTTPException(429, "尝试过于频繁，请 10 分钟后重试")
-    if not hmac.compare_digest(account_identity(body.username.strip(), body.password), session_identity):
-        attempts[host] = recent + [time.time()]
-        raise HTTPException(401, "账号或密码不正确")
-    attempts.pop(host, None)
-    response.set_cookie(
-        "law_session",
-        signer.dumps(session_identity),
-        httponly=True,
-        secure=settings.cookie_secure,
-        samesite="strict",
-        max_age=43200,
-    )
-    return {"ok": True, "username": settings.app_username}
+    host, recent = check_attempts(request)
+    with Session.begin() as db:
+        account = db.scalar(select(Account).where(Account.id == 1).with_for_update())
+        valid = account is not None and verify_password(body.password, account.password_hash)
+        if not valid or account.username != body.username.strip():
+            attempts[host] = recent + [time.time()]
+            raise HTTPException(401, "账号或密码不正确")
+        attempts.pop(host, None)
+        create_session(db, response)
+        username = account.username
+    return {"ok": True, "username": username}
 
 
 router = APIRouter(prefix="/api", dependencies=[Depends(authenticate)])
 
 
 @router.get("/session")
-def session():
-    return {"authenticated": True, "username": settings.app_username}
+def session(request: Request):
+    return {"authenticated": True, "username": request.state.account_name}
+
+
+@router.put("/account")
+def change_account(body: ChangeAccount, request: Request, response: Response):
+    host, recent = check_attempts(request)
+    with Session.begin() as db:
+        account = db.scalar(select(Account).where(Account.id == 1).with_for_update())
+        if db.get(LoginSession, token_hash(request.cookies.get("law_session", ""))) is None:
+            raise HTTPException(401, "会话已失效，请重新登录")
+        if not verify_password(body.current_password, account.password_hash):
+            attempts[host] = recent + [time.time()]
+            raise HTTPException(400, "当前密码不正确")
+        account.username = body.username
+        account.password_hash = hash_password(body.password)
+        db.execute(delete(LoginSession).where(LoginSession.account_id == account.id))
+        attempts.pop(host, None)
+    response.delete_cookie("law_session")
+    return {"ok": True}
 
 
 @router.post("/logout")
-def logout(response: Response):
+def logout(request: Request, response: Response):
+    with Session.begin() as db:
+        db.execute(delete(LoginSession).where(
+            LoginSession.token_hash == token_hash(request.cookies.get("law_session", ""))
+        ))
     response.delete_cookie("law_session")
     return {"ok": True}
 
@@ -393,6 +452,11 @@ async def events(run_id: str, request: Request, after: int = 0):
     async def stream():
         cursor = after
         while not await request.is_disconnected():
+            try:
+                authenticate(request)
+            except HTTPException:
+                yield 'event: session-expired\ndata: {}\n\n'
+                break
             with Session() as db:
                 rows = db.scalars(
                     select(Event).where(Event.run_id == run_id, Event.id > cursor).order_by(Event.id)

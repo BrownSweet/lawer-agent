@@ -1,16 +1,12 @@
-import base64
 import copy
-import hashlib
 import json
 from typing import Literal
 
-from cryptography.fernet import Fernet
 from pydantic import BaseModel, Field, HttpUrl
 
-from .config import DEFAULT_CONFIG, settings
+from .config import DEFAULT_CONFIG
 from .db import Config, Session
-
-fernet = Fernet(base64.urlsafe_b64encode(hashlib.sha256(settings.app_secret.encode()).digest()))
+from .security import configuration_cipher
 
 
 class ProviderConfig(BaseModel):
@@ -49,7 +45,7 @@ class Preferences(BaseModel):
 def load_config():
     with Session() as db:
         row = db.get(Config, 1)
-        return json.loads(fernet.decrypt(row.encrypted.encode())) if row else copy.deepcopy(DEFAULT_CONFIG)
+        return json.loads(configuration_cipher().decrypt(row.encrypted.encode())) if row else copy.deepcopy(DEFAULT_CONFIG)
 
 
 def public_config(config):
@@ -78,7 +74,7 @@ def save_config(incoming):
     data = Preferences.model_validate(data).model_dump(mode="json")
     with Session.begin() as db:
         row = db.get(Config, 1)
-        encrypted = fernet.encrypt(json.dumps(data, ensure_ascii=False).encode()).decode()
+        encrypted = configuration_cipher().encrypt(json.dumps(data, ensure_ascii=False).encode()).decode()
         if row:
             row.encrypted = encrypted
         else:

@@ -7,7 +7,7 @@ import { api, apiURL, post, labels, date } from './api'
 import SettingsView from './SettingsView.vue'
 
 const authenticated = ref(false), initializing = ref(true), password = ref('')
-const username = ref(''), accountName = ref('')
+const username = ref(''), accountName = ref(''), needsSetup = ref(false), confirmPassword = ref('')
 const cases = ref<any[]>([]), current = ref<any>(null), run = ref<any>(null)
 const config = ref<any>(null), view = ref('workspace'), tab = ref('materials')
 const busy = ref(''), error = ref(''), toast = ref(''), search = ref(''), mobileNav = ref(false)
@@ -54,10 +54,24 @@ const safeURL = (url: string) => /^https?:\/\//i.test(url || '') ? url : undefin
 async function loadConfig() { config.value = await api('/settings') }
 async function refreshCases() { cases.value = await api('/cases') }
 async function login() {
+  if (needsSetup.value && password.value !== confirmPassword.value) { error.value = '两次输入的密码不一致'; return }
   busy.value = 'login'; error.value = ''
-  try { const session = await api('/login', post({ username: username.value.trim(), password: password.value })); accountName.value = session.username; password.value = ''; authenticated.value = true; await initialize() }
-  catch (e: any) { error.value = e.message } finally { busy.value = '' }
+  try {
+    const session = await api(needsSetup.value ? '/auth/setup' : '/login', post({ username: username.value.trim(), password: password.value }))
+    accountName.value = session.username; password.value = ''; confirmPassword.value = ''; needsSetup.value = false
+    authenticated.value = true; await initialize()
+  } catch (e: any) {
+    error.value = e.message
+    if (needsSetup.value) {
+      try { needsSetup.value = !(await api('/auth/status')).initialized } catch { /* Keep the original error. */ }
+    }
+  } finally { busy.value = '' }
 }
+function accountChanged(name: string) {
+  expire(); username.value = name; password.value = ''; view.value = 'workspace'
+  error.value = ''; toast.value = ''; loginNotice.value = '账号设置已更新，请使用新账号和密码重新登录。'
+}
+const loginNotice = ref('')
 async function initialize() {
   await Promise.all([refreshCases(), loadConfig()])
   if (cases.value.length) await chooseCase(cases.value[0].id)
@@ -67,8 +81,10 @@ async function logout() { await api('/logout', post()); expire() }
 onMounted(async () => {
   window.addEventListener('session-expired', expire)
   window.addEventListener('keydown', modalKeyboard)
-  try { const session = await api('/session'); accountName.value = session.username; authenticated.value = true; await initialize() }
-  catch { authenticated.value = false }
+  try {
+    needsSetup.value = !(await api('/auth/status')).initialized
+    if (!needsSetup.value) { const session = await api('/session'); accountName.value = session.username; authenticated.value = true; await initialize() }
+  } catch { authenticated.value = false }
   finally { initializing.value = false }
   poll = setInterval(async () => {
     if (!authenticated.value || !current.value) return
@@ -175,6 +191,7 @@ async function chooseRun(id: string) {
   if (generation !== runGeneration || current.value?.id !== row.case_id) return
   run.value = row
   const currentStream = new EventSource(apiURL(`/runs/${id}/events`))
+  currentStream.addEventListener('session-expired', () => { currentStream.close(); expire() })
   stream = currentStream
   currentStream.addEventListener('progress', async e => {
     if (generation !== runGeneration) return
@@ -205,7 +222,21 @@ async function calculate() {
   <div v-if="initializing" class="boot">正在连接律序工作台…</div>
   <main v-else-if="!authenticated" class="login-page">
     <div class="login-story"><div class="brand"><span class="brand-mark"><Scale :size="23" /></span><b>律序</b><span>LEGAL WORKSPACE</span></div><div><p class="eyebrow">EVERY ARGUMENT, GROUNDED.</p><h1>让每一个判断，<br>都有据可循。</h1><p>从纷繁材料到清晰脉络。<br>一个连接事实、法律研究与文书草稿的工作台。</p><div class="story-line"></div><span class="small">材料整理 / 法律研究 / 多角色复核</span></div><span class="small">以证据为起点，以审慎为尺度。</span></div>
-    <section class="login-form"><div class="mini-label">YOUR PRIVATE WORKSPACE</div><h2>回到你的工作台</h2><p class="muted">使用你的账号和密码登录，继续处理案件材料。</p><form @submit.prevent="login"><label>账号<input v-model="username" name="username" autocomplete="username" required autofocus maxlength="64" placeholder="请输入账号"></label><label>密码<input v-model="password" name="password" type="password" autocomplete="current-password" required placeholder="请输入密码"></label><p v-if="error" class="alert error" role="alert">{{ error }}</p><button class="primary full" :disabled="!!busy">{{ busy ? '正在登录…' : '进入工作台' }}<ArrowRight :size="17" /></button></form><p class="hint">请使用管理员提供的账号和密码。</p><div class="login-foot"><ShieldCheck :size="17" />私有工作空间 · 文件与来源可追溯</div></section>
+    <section class="login-form">
+      <div class="mini-label">YOUR PRIVATE WORKSPACE</div>
+      <h2>{{ needsSetup ? '创建管理员账号' : '回到你的工作台' }}</h2>
+      <p class="muted">{{ needsSetup ? '首次使用，请设置这个工作空间的管理员账号和密码。' : '使用你的账号和密码登录，继续处理案件材料。' }}</p>
+      <p v-if="loginNotice" class="alert success" role="status">{{ loginNotice }}</p>
+      <form @submit.prevent="login">
+        <label>账号<input v-model="username" name="username" autocomplete="username" required autofocus :minlength="needsSetup ? 3 : 1" maxlength="64" :pattern="needsSetup ? '[A-Za-z0-9_.@-]+' : undefined" placeholder="请输入账号"></label>
+        <label>密码<input v-model="password" name="password" type="password" :autocomplete="needsSetup ? 'new-password' : 'current-password'" :minlength="needsSetup ? 12 : undefined" maxlength="256" required :placeholder="needsSetup ? '至少 12 个字符' : '请输入密码'"></label>
+        <label v-if="needsSetup">确认密码<input v-model="confirmPassword" type="password" autocomplete="new-password" required minlength="12" maxlength="256" placeholder="再次输入密码"></label>
+        <p v-if="error" class="alert error" role="alert">{{ error }}</p>
+        <button class="primary full" :disabled="!!busy">{{ busy ? '正在处理…' : needsSetup ? '创建管理员并进入' : '进入工作台' }}<ArrowRight :size="17" /></button>
+      </form>
+      <p class="hint">{{ needsSetup ? '账号为 3–64 位字母、数字或 _ . @ -；创建后可在工作台设置中修改。' : '账号和密码可在工作台设置中修改。' }}</p>
+      <div class="login-foot"><ShieldCheck :size="17" />私有工作空间 · 文件与来源可追溯</div>
+    </section>
   </main>
   <div v-else class="app-shell">
     <aside class="sidebar" :class="{ open: mobileNav }">
@@ -222,7 +253,7 @@ async function calculate() {
       <div class="content">
         <div v-if="error" class="alert error" role="alert"><AlertCircle :size="17" />{{ error }}<button class="icon-button" aria-label="关闭错误" @click="error = ''"><X :size="16" /></button></div>
         <div v-if="toast" class="alert success" role="status"><Check :size="17" />{{ toast }}<button class="icon-button" aria-label="关闭提示" @click="toast = ''"><X :size="16" /></button></div>
-        <SettingsView v-if="view === 'settings'" @saved="loadConfig" />
+        <SettingsView v-if="view === 'settings'" :account-name="accountName" @saved="loadConfig" @account-changed="accountChanged" />
         <template v-else-if="!current">
           <section class="welcome"><p class="eyebrow">A CLEARER WAY TO WORK</p><h1>从一份材料，<br>开始理清案件。</h1><p class="muted">将合同、聊天截图、PDF 与相关依据放在一起，<br>让事实、争议和下一步逐渐清晰。</p><button class="primary" @click="newCase = true"><Plus :size="18" />建立第一个案件</button><div class="welcome-cards"><div><FileText /><h3>整理材料</h3><p>上传原件，按页提取与引用。</p></div><div><BookOpen /><h3>建立依据</h3><p>保留来源、原文与版本。</p></div><div><ShieldCheck /><h3>复核判断</h3><p>区分事实、推论与未核验项。</p></div></div></section>
         </template>

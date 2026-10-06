@@ -37,7 +37,7 @@ def main():
         for command in ([uv, 'run', 'uvicorn', 'law_backend.api:app', '--host', '127.0.0.1', '--port', str(args.port)],
                         [uv, 'run', 'law-worker']):
             processes.append(subprocess.Popen(command, cwd=ROOT / 'law_backend', start_new_session=True))
-        print(f'Workspace: http://127.0.0.1:{args.port} | Login: APP_USERNAME and APP_PASSWORD in .env', flush=True)
+        print(f'Workspace: http://127.0.0.1:{args.port} | 首次使用请在页面创建管理员', flush=True)
         while all(process.poll() is None for process in processes):
             time.sleep(0.5)
     except KeyboardInterrupt:

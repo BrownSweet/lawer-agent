@@ -2,7 +2,18 @@
 import { onMounted, ref } from 'vue'
 import { Save, PlugZap, Check, ShieldCheck } from 'lucide-vue-next'
 import { api, post } from './api'
-const emit = defineEmits(['saved'])
+const props = defineProps<{ accountName: string }>()
+const emit = defineEmits(['saved', 'account-changed'])
+const account = ref({ username: props.accountName, current_password: '', password: '', confirm: '' })
+async function saveAccount() {
+  if (account.value.password !== account.value.confirm) { error.value = '两次输入的新密码不一致'; return }
+  busy.value = 'account'; error.value = ''; message.value = ''
+  try {
+    await api('/account', { method: 'PUT', body: JSON.stringify({ username: account.value.username.trim(), current_password: account.value.current_password, password: account.value.password }) })
+    account.value.current_password = ''; account.value.password = ''; account.value.confirm = ''
+    emit('account-changed', account.value.username.trim())
+  } catch (e: any) { error.value = e.message } finally { busy.value = '' }
+}
 const config = ref<any>(null)
 const busy = ref('')
 const error = ref('')
@@ -44,9 +55,22 @@ async function test(target: string) {
 
 <template>
   <div class="settings-page">
-    <div class="page-heading"><div><p class="eyebrow">WORKSPACE SETTINGS</p><h1>工作台设置</h1><p class="muted">配置模型、文件存储与可选检索服务。</p></div><button class="primary" :disabled="!!busy || !config" @click="save"><Save :size="16" />{{ busy === 'save' ? '保存中…' : '保存配置' }}</button></div>
+    <div class="page-heading"><div><p class="eyebrow">WORKSPACE SETTINGS</p><h1>工作台设置</h1><p class="muted">管理账号、模型、文件存储与可选检索服务。</p></div><button class="primary" :disabled="!!busy || !config" @click="save"><Save :size="16" />{{ busy === 'save' ? '保存中…' : '保存配置' }}</button></div>
     <p v-if="error" class="alert error" role="alert">{{ error }}</p><p v-if="message" class="alert success" role="status"><Check :size="16" />{{ message }}</p>
     <div v-if="config" class="settings-grid">
+      <section class="panel settings-card wide">
+        <div class="section-title"><ShieldCheck :size="20" /><h2>账号与密码</h2></div>
+        <p class="muted small">修改时需要验证当前密码。保存后所有已登录设备都会退出，请使用新账号和密码重新登录。</p>
+        <form @submit.prevent="saveAccount">
+          <div class="two-columns">
+            <label>登录账号<input v-model="account.username" autocomplete="username" required minlength="3" maxlength="64" pattern="[A-Za-z0-9_.@-]+"></label>
+            <label>当前密码<input v-model="account.current_password" type="password" autocomplete="current-password" required maxlength="256"></label>
+            <label>新密码<input v-model="account.password" type="password" autocomplete="new-password" required minlength="12" maxlength="256" placeholder="至少 12 个字符"></label>
+            <label>确认新密码<input v-model="account.confirm" type="password" autocomplete="new-password" required minlength="12" maxlength="256"></label>
+          </div>
+          <button type="submit" :disabled="!!busy">{{ busy === 'account' ? '正在保存…' : '保存账号与密码' }}</button>
+        </form>
+      </section>
       <section class="panel settings-card"><div class="section-title"><span class="step-number">01</span><h2>大模型</h2><span class="badge">必需</span></div>
         <p class="muted small">先保存，再分别测试文本与图片能力。测试会调用所选模型。</p>
         <label>当前供应商<select v-model="config.provider"><option value="deepseek">DeepSeek 直连</option><option value="tokenhub">腾讯云 TokenHub</option></select></label>

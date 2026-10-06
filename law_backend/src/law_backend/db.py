@@ -117,6 +117,21 @@ class Config(Base):
     encrypted: Mapped[str] = mapped_column(LongText)
 
 
+class Account(Base):
+    __tablename__ = "workspace_account"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False, default=1)
+    username: Mapped[str] = mapped_column(String(64))
+    password_hash: Mapped[str] = mapped_column(String(256))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class LoginSession(Base):
+    __tablename__ = "workspace_sessions"
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("workspace_account.id"))
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+
 def event(db, run, stage, message):
     run.stage = stage
     run.heartbeat = now()
